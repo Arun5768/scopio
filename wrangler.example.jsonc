@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "scopio",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "scopio-db",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "vars": {
+    "APP_ORIGIN": "http://127.0.0.1:5175",
+    "EMAIL_MODE": "test",
+    "EMAIL_FROM": "Scopio <onboarding@resend.dev>",
+    "EMAIL_TEST_RECIPIENT": "",
+    "GMAIL_OWNER_EMAIL": "",
+    "GMAIL_ACCESS_MODE": "invited"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {"enabled": true, "invocation_logs": false}
+  },
+  "triggers": {"crons": ["1-59/5 * * * *"]}
+}

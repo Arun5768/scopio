@@ -1,0 +1,15 @@
+# Configure runtime values with wrangler secret put (never commit real secrets).
+APP_ORIGIN=http://127.0.0.1:5175
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+RESEND_API_KEY=
+EMAIL_MODE=test
+EMAIL_FROM=Scopio <onboarding@resend.dev>
+EMAIL_TEST_RECIPIENT=
+GMAIL_OWNER_EMAIL=
+GMAIL_ACCESS_MODE=invited
+# Optional Gmail sending: generate a new 32-byte key as 64 hexadecimal characters.
+GMAIL_TOKEN_KEY=
+# Optional Resend delivery reports: use the signing secret for your webhook.
+RESEND_WEBHOOK_SECRET=
+# Set the actual deployed HTTPS origin in wrangler.jsonc before production.

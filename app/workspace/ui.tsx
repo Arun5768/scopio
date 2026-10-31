@@ -1,0 +1,16 @@
+'use client';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {X,Check,ArrowUpRight} from 'lucide-react';
+
+export function Brand(){return <a className="studio-brand" href="/" aria-label="Scopio home"><span><ArrowUpRight size={22} strokeWidth={2.8}/></span>scopio<span className="brand-period">.</span></a>}
+export function Field({label,hint,children}:{label:string;hint?:string;children:ReactNode}){return <label className="field"><span>{label}</span>{children}{hint&&<small>{hint}</small>}</label>}
+export function Badge({text}:{text:string}){const good=['Approved','Reviewed','Likely included'].includes(text);return <span className={'status-pill '+(good?'good':['Draft','Potential addition'].includes(text)?'warm':text==='Declined'?'quiet':'blue')}>{good?<Check size={12}/>:<i/>}{text}</span>}
+export function Empty({icon,title,children,action}:{icon:ReactNode;title:string;children:ReactNode;action?:ReactNode}){return <div className="quiet-empty"><div className="empty-icon">{icon}</div><h3>{title}</h3><p>{children}</p>{action}</div>}
+export function Dialog({title,eyebrow,children,onClose,busy=false,wide=false}:{title:string;eyebrow?:string;children:ReactNode;onClose:()=>void;busy?:boolean;wide?:boolean}){
+ const ref=useRef<HTMLDivElement>(null),closeRef=useRef(onClose),busyRef=useRef(busy),timer=useRef<ReturnType<typeof setTimeout>|null>(null);
+ const [closing,setClosing]=useState(false);closeRef.current=onClose;busyRef.current=busy;
+ function close(){if(busyRef.current||timer.current)return;setClosing(true);timer.current=setTimeout(()=>closeRef.current(),150)}
+ useEffect(()=>{const old=document.activeElement as HTMLElement;const shell=document.querySelector('.studio-layout');shell?.setAttribute('inert','');const overflow=document.body.style.overflow;document.body.style.overflow='hidden';(ref.current?.querySelector<HTMLElement>('input,textarea,select,[data-first-focus]')||ref.current?.querySelector<HTMLElement>('button'))?.focus();
+ const key=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();close()}if(e.key==='Tab'){const nodes=Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],summary')||[]).filter(x=>x.getClientRects().length);const first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus()}}};document.addEventListener('keydown',key);return()=>{if(timer.current)clearTimeout(timer.current);document.removeEventListener('keydown',key);shell?.removeAttribute('inert');document.body.style.overflow=overflow;if(old?.isConnected)old.focus()}},[]);
+ return <div className={'dialog-scrim '+(closing?'is-closing':'')} onMouseDown={e=>{if(e.target===e.currentTarget)close()}}><section className={'studio-dialog '+(wide?'wide':'')} role="dialog" aria-modal="true" aria-labelledby="dialog-title" ref={ref}><header className="dialog-heading"><div>{eyebrow&&<div className="overline">{eyebrow}</div>}<h2 id="dialog-title">{title}</h2></div><button className="icon-button" aria-label="Close dialog" disabled={busy} onClick={close}><X size={20}/></button></header><div className="dialog-content">{children}</div></section></div>
+}

@@ -1,0 +1,20 @@
+'use client';
+import {useEffect,useState} from 'react';
+import {ArrowRight,Check,X,RefreshCw} from 'lucide-react';
+import {Brand,Badge} from '../workspace/ui';
+import {money,type Change,type Brief} from '../../lib/scopio';
+type Review={name:string;client:string;currency:string;change:Change;brief:Brief;feedback:string};
+export default function ReviewPage(){
+ const [data,setData]=useState<Review|null>(null),[error,setError]=useState(''),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[login,setLogin]=useState(false),[wrongAccount,setWrongAccount]=useState(false),[confirmed,setConfirmed]=useState(false);
+ async function load(){setError('');try{const r=await fetch('/api/review'+location.search);const d=await r.json() as Review&{error:string};if(!r.ok){setData(null);setLogin(r.status===401||r.status===403);setWrongAccount(r.status===403);throw Error(d.error)}setData(d);setLogin(false)}catch(e){setError((e as Error).message)}}
+ useEffect(()=>{load()},[]);
+ async function decide(decision:string){if(busy)return;setBusy(true);setError('');try{const r=await fetch('/api/review'+location.search,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision,note,confirmed})});const d=await r.json() as {error?:string};if(r.status===409){await load();return}if(!r.ok){if(r.status===401)setLogin(true);throw Error(d.error)}await load()}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+ const amount=data?money(data.change.hours*data.change.rate,data.currency):'';
+ return <main className="review-page"><Brand/><div className="overline">A CLEAR NEXT STEP</div><h1>Let’s get on the same page.</h1>
+ {error&&<div className="notice" role="alert">{error}</div>}
+ {login&&<a className="button dark" href={'/api/auth/google?return_to='+encodeURIComponent('/review'+(typeof window!=='undefined'?window.location.search:''))} target="_top">{wrongAccount?'Switch Google account':'Sign in to review'} <ArrowRight size={16}/></a>}
+ {error&&!login&&<button className="button outline small" onClick={load}><RefreshCw size={15}/> Refresh request</button>}
+ {data?<div className="panel"><Badge text={data.change.status}/><h2 style={{fontSize:34}}>{data.change.title}</h2><p className="signed-note">{data.name} · Prepared for {data.client}</p><p style={{whiteSpace:'pre-wrap'}}>{data.change.description}</p><div className="change-numbers"><div><small>Additional cost</small><strong>{amount}</strong></div><div><small>Estimated effort</small><strong>{data.change.hours} hours</strong></div><div><small>Delivery impact</small><strong>+{data.change.days} days</strong></div></div><details><summary>View original request and brief</summary><div className="evidence"><b>Original feedback</b><p>{data.feedback}</p></div><pre className="brief-text">{data.brief?.content}</pre></details>
+ {data.change.status==='Awaiting approval'?<><label className="field" style={{marginTop:25}}><span>Optional note</span><textarea value={note} maxLength={1000} onChange={e=>setNote(e.target.value)} placeholder="Anything you’d like to clarify?"/></label><label style={{display:'flex',gap:12,alignItems:'flex-start',margin:'20px 0',fontSize:14,lineHeight:1.6}}><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} style={{width:18,height:18,marginTop:3,flexShrink:0}}/><span>I agree to this deliverable, the additional {amount}, and +{data.change.days} delivery days.</span></label><p className="signed-note">Your verified account and decision time will be recorded. No payment is collected.</p><div className="change-actions"><button className="button dark" disabled={busy||!confirmed} onClick={()=>decide('Approved')}>Approve change <Check size={16}/></button><button className="button outline" disabled={busy} onClick={()=>decide('Declined')}>Decline <X size={16}/></button></div></>:<div className="evidence"><b>Decision recorded: {data.change.status}</b><p>{data.change.decidedBy} · {data.change.decidedAt&&new Date(data.change.decidedAt).toLocaleString()}</p><p>{data.change.note}</p></div>}</div>:!error&&<div className="loading">Loading your review…</div>}
+ </main>
+}

@@ -1,0 +1,11 @@
+CREATE TABLE gmail_invites (email TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+CREATE TABLE email_delivery (provider_id TEXT PRIMARY KEY, state TEXT NOT NULL, priority INTEGER NOT NULL, event_at INTEGER NOT NULL);
+CREATE TABLE email_webhook_events (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, type TEXT NOT NULL, received_at INTEGER NOT NULL);
+CREATE INDEX email_webhook_received ON email_webhook_events(received_at);
+CREATE INDEX email_outbox_provider_id ON email_outbox(provider,provider_id);
+ALTER TABLE email_outbox ADD COLUMN reviewed_at TEXT;
+ALTER TABLE email_outbox ADD COLUMN client_decision TEXT;
+ALTER TABLE email_outbox ADD COLUMN decided_at TEXT;
+CREATE TABLE service_state (id TEXT PRIMARY KEY, last_success INTEGER, last_failure INTEGER, running_since INTEGER);
+CREATE TABLE service_events (id TEXT PRIMARY KEY, route TEXT NOT NULL, status INTEGER NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX service_events_time ON service_events(created_at);

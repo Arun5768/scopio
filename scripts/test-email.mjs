@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {readFileSync,mkdirSync} from 'node:fs';
+import {build} from 'esbuild';
+import {Miniflare} from 'miniflare';
+mkdirSync('.wrangler',{recursive:true});
+await build({entryPoints:['lib/email.ts'],outfile:'.wrangler/email-test.mjs',platform:'node',format:'esm',bundle:true});
+const {canEmail,approvalJob,setupJob,deliveryTestJob,insertEmail,saveWithEmail,processEmails,retryEmail}=await import('../.wrangler/email-test.mjs');
+const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("ok")}}',compatibilityDate:'2026-05-15',d1Databases:['DB']});
+const db=await mf.getD1Database('DB');let checks=0;
+async function check(name,fn){await fn();console.log('PASS '+name);checks++}
+const e={APP_ORIGIN:'https://scopio.example',EMAIL_MODE:'test',EMAIL_TEST_RECIPIENT:'owner@example.com',EMAIL_FROM:'Scopio <onboarding@resend.dev>',RESEND_API_KEY:'fake-local-test-only'};
+const row=id=>db.prepare('SELECT * FROM email_outbox WHERE id=?').bind(id).first();
+let sends=[];const accepted=async(url,init)=>{sends.push({url,init});return Response.json({id:'provider-'+sends.length})};
+try{
+ await db.exec('CREATE TABLE projects (id TEXT PRIMARY KEY,owner TEXT,data TEXT,revision INTEGER,updated_at TEXT);');
+ for(const file of ['0002_email_outbox.sql','0003_gmail_pilot.sql','0004_delivery_operations.sql'])for(const statement of readFileSync('drizzle/'+file,'utf8').split(';').map(s=>s.trim()).filter(Boolean))await db.prepare(statement).run();
+ await check('test mode fails closed for every other recipient',async()=>{assert.equal(canEmail(e,'client@example.com'),false);assert.equal(canEmail(e,'OWNER@example.com'),true);assert.equal(canEmail({...e,EMAIL_TEST_RECIPIENT:''},'owner@example.com'),false);assert.equal(canEmail({...e,EMAIL_MODE:'anything'},'owner@example.com'),false)});
+ const j=setupJob(e,'owner','owner@example.com');await insertEmail(db,j).run();
+ await check('concurrent workers claim a message once',async()=>{await Promise.all([processEmails(db,e,accepted),processEmails(db,e,accepted)]);assert.equal(sends.length,1);assert.equal((await row(j.id)).status,'Accepted')});
+ await check('duplicate setup requests cannot send twice',async()=>{await insertEmail(db,setupJob(e,'owner','owner@example.com')).run();await processEmails(db,e,accepted);assert.equal(sends.length,1);assert.equal(await retryEmail(db,'owner',j.id),false)});
+ const retry=setupJob(e,'retry','owner@example.com');await insertEmail(db,retry).run();
+ await check('ambiguous delivery retries the exact payload and idempotency key',async()=>{let first;await processEmails(db,e,async(_url,init)=>{first=init;throw Error('lost response')},retry.id);assert.equal((await row(retry.id)).status,'Queued');await db.prepare('UPDATE email_outbox SET next_attempt=0 WHERE id=?').bind(retry.id).run();await processEmails(db,e,async(url,init)=>{assert.equal(init.body,first.body);assert.equal(init.headers['Idempotency-Key'],first.headers['Idempotency-Key']);return accepted(url,init)},retry.id);assert.equal((await row(retry.id)).status,'Accepted')});
+ const expired=setupJob(e,'expired','owner@example.com');await insertEmail(db,expired).run();await db.prepare('UPDATE email_outbox SET first_attempt=? WHERE id=?').bind(Date.now()-24*3600000,expired.id).run();
+ await check('old uncertain sends stop before provider deduplication expires',async()=>{const before=sends.length;await processEmails(db,e,accepted,expired.id);assert.equal((await row(expired.id)).status,'Unknown');assert.equal(sends.length,before)});
+ const c={id:'change',token:'token',title:'<img src=x onerror=alert(1)>',hours:8,rate:75,days:2,status:'Awaiting approval'};
+ const p={id:'project',revision:2,name:'Test & Co',client:'Client',email:'owner@example.com',ownerEmail:'owner@example.com',currency:'USD',sample:false,changes:[c]};
+ const approval=approvalJob(e,p,c,'owner','approval');
+ await check('email content escapes project text and keeps secure review links',async()=>{const payload=JSON.parse(approval.payload);assert.ok(!payload.html.includes('<img'));assert.match(payload.html,/&lt;img/);assert.match(payload.text,/https:\/\/scopio.example\/review\?project=project&token=token/);assert.throws(()=>approvalJob(e,{...p,sample:true},c,'owner','approval'))});
+ await db.prepare('INSERT INTO projects VALUES (?,?,?,?,?)').bind('project','owner',JSON.stringify({...p,revision:1}),1,'now').run();
+ await check('stale project writes queue no email',async()=>{assert.equal(await saveWithEmail(db,p,'owner',99,approval),false);assert.equal(await row(approval.id),null);assert.equal(await saveWithEmail(db,p,'owner',1,approval),true);assert.equal((await row(approval.id)).status,'Queued')});
+ await check('withdrawn requests cancel queued mail',async()=>{await db.prepare('UPDATE projects SET data=? WHERE id=?').bind(JSON.stringify({...p,changes:[{...c,status:'Draft',token:undefined}]}),p.id).run();const before=sends.length;await processEmails(db,e,accepted,approval.id);assert.equal((await row(approval.id)).status,'Cancelled');assert.equal(sends.length,before)});
+ const blocked={...setupJob(e,'blocked','owner@example.com'),recipient:'someone@example.com'};await insertEmail(db,blocked).run();
+ await check('dispatch rechecks recipient limits after queueing',async()=>{await processEmails(db,e,accepted,blocked.id);assert.equal((await row(blocked.id)).status,'Failed');assert.equal(await retryEmail(db,'other',blocked.id),false)});
+ const permanent=setupJob(e,'failure','owner@example.com');await insertEmail(db,permanent).run();
+ await check('credential errors are recorded without retry loops or secrets',async()=>{await processEmails(db,e,async()=>Response.json({message:'secret should never appear'},{status:401}),permanent.id);const r=await row(permanent.id);assert.equal(r.status,'Failed');assert.ok(!r.error.includes('secret should'));assert.equal(await retryEmail(db,'failure',permanent.id),true)});
+ const decided={...c,status:'Approved',decidedBy:'owner@example.com'};
+ await check('client decisions notify the durable project owner',async()=>{const job=approvalJob(e,p,decided,'owner','decision');assert.equal(job.recipient,p.ownerEmail);assert.match(JSON.parse(job.payload).text,/client approved/);assert.notEqual(job.id,approval.id)});
+ await check('delivery check is restricted and sends once with no client data',async()=>{assert.throws(()=>deliveryTestJob(e,'owner','client@example.com'));assert.throws(()=>deliveryTestJob({...e,provider:'gmail'},'owner','owner@example.com'));const job=deliveryTestJob(e,'owner','owner@example.com');const payload=JSON.parse(job.payload);assert.equal(payload.subject,'Scopio delivery tracking check');assert.deepEqual(payload.to,['owner@example.com']);assert.ok(!payload.text.includes('/review'));await insertEmail(db,job).run();await insertEmail(db,deliveryTestJob(e,'owner','owner@example.com')).run();const before=sends.length;await processEmails(db,e,accepted,job.id);await processEmails(db,e,accepted,job.id);assert.equal(sends.length,before+1)});
+ console.log(checks+' email safety and delivery checks passed. No network emails were sent.');
+}finally{await mf.dispose()}
