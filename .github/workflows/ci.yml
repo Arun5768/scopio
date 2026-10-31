@@ -22,6 +22,8 @@ jobs:
         with:
           node-version: "22"
           cache: npm
+      - name: Check publication boundaries
+        run: node scripts/check-publication.mjs
       - run: npm ci
       - name: Set up isolated local configuration
         run: cp wrangler.example.jsonc wrangler.jsonc

@@ -39,6 +39,24 @@ yarn-error.log*
 *.db
 client_secret*.json
 *credentials*.json
+service-account*.json
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm
+
+# Private operational exports, recordings, and backups
+*.log
+*.har
+*.mp4
+*.webm
+*.zip
+*.bak
+/backups/
+/exports/
+/recordings/
+/private/
+/secrets/
 
 # Deployment-specific settings and one-off operator bootstrap helpers
 /wrangler.jsonc

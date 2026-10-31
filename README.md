@@ -134,3 +134,5 @@ Gmail is optional and send-only; Scopio cannot read the inbox. Gmail acceptance 
 - Data deletion and private security reports go to the operator contact on the live privacy page.
 
 Secrets, local databases, review links, production logs, and one-off operator deployment scripts are excluded from this repository. Third-party files retain their included license notices.
+
+Before committing, stage the intended source files and run `node scripts/check-publication.mjs`. This checks tracked paths, common credential formats, and empty example settings; CI repeats the check. It is a guardrail, not a substitute for reviewing files before pushing. Store real secrets only in local ignored settings or Cloudflare Worker secrets. Never upload database exports, consent recordings, private approval links, or client screenshots.
